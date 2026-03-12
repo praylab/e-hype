@@ -9,6 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
-# files 
-.nc 
-.zip
+# data folder
+FLOOD_RIVER_discharges/
