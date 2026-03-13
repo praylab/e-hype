@@ -15,6 +15,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+#%%
+
 # select area of interest 
 locname = 'Guadalquivir'
 loc = [-5.98, 37.52]  # longitude, latitude
@@ -34,6 +36,11 @@ data_folder_catch = os.path.join(data_folder, 'EHYPEcatch')
 # load catchment dataset 
 data_folder_subbasins = os.path.join(data_folder, 'EHYPE3_subbasins')
 os.makedirs(data_folder_subbasins, exist_ok=True)
+
+data_folder_grid = os.path.join(data_folder, 'EHYPEgrid')
+
+#%%
+# Catchment dataset and plotting
 
 # retrieve the subbasins file from Zenodo 
 pooch.retrieve(
@@ -77,7 +84,7 @@ catchments['select'] = np.where(catchments.index == catch_id, 1, 0)
 # select only the nearby catchments within radius of 1 degree (gdf.cx is a spatial indexer for GeoDataFrames)
 catchments_sel = catchments.cx[(loc[0]-1):(loc[0]+1), (loc[1]-1):(loc[1]+1)]
 
-#%%
+#%% 
 # make interactive plot 
 fig = go.Figure()
 
@@ -132,8 +139,6 @@ ds_mon = xr.open_mfdataset(
     preprocess=preprocess_monthly_mean, 
     chunks='auto'
 )
-
-# %%
 
 # select data for sepcific catchment 
 with dask.diagnostics.ProgressBar():
@@ -197,4 +202,46 @@ fig.show()
 
 # Save figure
 fig.write_image(os.path.join(plot_dir, f'{locname}_monthly_means.png'))
-# %%
+#%%
+# open the daily discharge dataset 
+
+# extract metadata from filename and add it as new dimension to dataset 
+def preprocess_daily(ds):
+    filename = os.path.basename(ds.encoding['source'])
+    _, _, hydromodel, gcm, scenario, _, rcm, year, _, _ = filename.split('_')
+    lat2d = ds['lat']
+    return ds.expand_dims({
+        'hydromodel': [hydromodel], 
+        'gcm_rcm': [f'{gcm}_{rcm}'],
+        'scenario': [scenario],
+        'year': [year],
+    }).assign_coords(lat=lat2d)
+
+# open the dataset in chuncks with dask to enable lazy loading and parallel processing
+ds_day = xr.open_mfdataset(
+    os.path.join(data_folder_grid, 'rdis_day_E-HYPEgrid-EUR-11_*_grid5km_v1.nc'),
+    preprocess=preprocess_daily,
+    chunks='auto'
+)
+
+#%% 
+# define the spatial dimension 
+ds_day = ds_day.rio.set_spatial_dims(x_dim='x', y_dim='y')
+
+# assign CRS if not already set
+# they don't have a crs seems like 
+# ds_try = ds_try.rio.write_crs("EPSG:4326")
+
+# clip using the polygon
+# clipped = ds_try.rio.clip(poly_series.geometry, poly_series.crs)
+
+## for defining area of interest see https://deltares-research.github.io/IDP-handbook/tutorials/IDP-workbench/tutorials/co-data/access_stac_geotiff.html#processing-multiple-geotiffs-to-find-trends
+# # select data for specific catchment 
+# with dask.diagnostics.ProgressBar():
+#     ds_day_sel = ds_day.sel(id=catch_id).compute()
+
+# # save data for selected catchment to local disk 
+# ds_mon_sel.to_netcdf(os.path.join(data_folder, f'rdis_ymonmean_abs_E-HYPEcatch_allmodels_{catch_id}.nc'))
+
+# # mean of all catchment models 
+# ds_mon_sel = ds_mon_sel.mean(dim='catchmodel')
